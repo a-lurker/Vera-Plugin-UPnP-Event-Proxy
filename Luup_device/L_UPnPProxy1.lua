@@ -1,14 +1,29 @@
 --
--- WeMo plugin
+-- UPnP Event Proxy plugin
 -- Copyright (C) 2013 Deborah Pickett
--- 
+--
 -- Version 0.0 2013-04-14 by Deborah Pickett
 --
+-- Minor mods by A-Lurker 26 Sept 2020
 
 module ("L_UPnPProxy1", package.seeall)
 
-local http = require("socket.http")
+local PLUGIN_NAME     = 'UPnPProxy'
+local PLUGIN_SID      = 'urn:futzle-com:serviceId:'..PLUGIN_NAME..'1'
+local PLUGIN_VERSION  = '0.52'
+local THIS_LUL_DEVICE = nil
+
+local initScriptPath = "/etc/init.d/upnp-proxy-daemon"
+local taskHandle = -1
+
+local http  = require("socket.http")
 local ltn12 = require("ltn12")
+
+-- Extend luup.variable_set() with variableSet()
+local function variableSet (k, v)
+    --luup.log (k..' = '..tostring(v),50)
+    luup.variable_set(PLUGIN_SID, k, v, THIS_LUL_DEVICE)
+end
 
 local initScript = [=[#!/bin/sh /etc/rc.common
 # Copyright (C) 2007 OpenWrt.org
@@ -64,115 +79,119 @@ stop() {
 }
 ]=]
 
-local initScriptPath = "/etc/init.d/upnp-proxy-daemon"
-
-local ProxyServiceId = "urn:futzle-com:serviceId:UPnPProxy1"
-local DeviceId
-local taskHandle = -1
-
-function task(message, mode)
-	taskHandle = luup.task(message, mode, string.format("%s[%d]", luup.devices[DeviceId].description, DeviceId), taskHandle)
+local function task(message, mode)
+    taskHandle = luup.task(message, mode, string.format("%s[%d]", luup.devices[THIS_LUL_DEVICE].description, THIS_LUL_DEVICE), taskHandle)
 end
 
-function createInitScript()
-	task("Creating init script", 1)
-	local f = io.open(initScriptPath, "w")
-	f:write(initScript)
-	f:close()
-	task("Created init script", 4)
-	task("Making init script executable", 1)
-	os.execute("chmod +x " .. initScriptPath)
-	task("Made init script executable", 4)
-	task("Enabling init script", 1)
-	os.execute(initScriptPath .. " enable")
-	task("Enabled init script", 4)
-	task("Starting init script", 1)
-	os.execute(initScriptPath .. " start")
-	task("Started init script", 4)
+local function createInitScript()
+    task("Creating init script", 1)
+    local f = io.open(initScriptPath, "w")
+    f:write(initScript)
+    f:close()
+    task("Created init script", 4)
+    task("Making init script executable", 1)
+    os.execute("chmod +x " .. initScriptPath)
+    task("Made init script executable", 4)
+    task("Enabling init script", 1)
+    os.execute(initScriptPath .. " enable")
+    task("Enabled init script", 4)
+    task("Starting init script", 1)
+    os.execute(initScriptPath .. " start")
+    task("Started init script", 4)
 end
 
+-- This is a time out target; function needs to be global
 function updateProxyVersion()
-	-- Get API version.
-	task("Checking that proxy is running", 1)
-	local ProxyApiVersion
-	local t = {}
-	local request, code = http.request({
-		url = "http://localhost:2529/version",
-		sink = ltn12.sink.table(t)
-	})
+    -- Get API version.
+    task("Checking that proxy is running", 1)
+    local ProxyApiVersion
+    local t = {}
+    local request, code = http.request({
+        url = "http://localhost:2529/version",
+        sink = ltn12.sink.table(t)
+    })
 
-	if (request == nil and code == "timeout") then
-		task("Checking that proxy is running (retrying)", 1)
-		luup.call_delay("updateProxyVersion", 5, "")
-		return
-	elseif (request == nil and code ~= "closed") then
-		-- Proxy not running.
-		task("Proxy is not running", 4)
-		luup.variable_set(ProxyServiceId, "Status", 0, DeviceId)
-		luup.variable_set(ProxyServiceId, "StatusText", "Not Running", DeviceId)
-	else
-		-- Proxy is running, note its version number.
-		task("Proxy is running", 4)
-		ProxyApiVersion = table.concat(t)
-		luup.variable_set(ProxyServiceId, "Status", 1, DeviceId)
-		luup.variable_set(ProxyServiceId, "StatusText", "Running", DeviceId)
-		luup.variable_set(ProxyServiceId, "API", ProxyApiVersion, DeviceId)
-	end
+    if (request == nil and code == "timeout") then
+        task("Checking that proxy is running (retrying)", 1)
+        luup.call_delay("updateProxyVersion", 5, "")
+        return
+    elseif (request == nil and code ~= "closed") then
+        -- Proxy not running.
+        task("Proxy is not running", 4)
+        variableSet("Status", 0)
+        variableSet("StatusText", "Not Running")
+    else
+        -- Proxy is running, note its version number.
+        task("Proxy is running", 4)
+        ProxyApiVersion = table.concat(t)
+        variableSet("Status", 1)
+        variableSet("StatusText", "Running")
+        variableSet("API", ProxyApiVersion)
+    end
 
-	-- Check again in a while.
-	luup.call_delay("updateProxyVersion", 400, "")
+    -- Check again in a while.
+    luup.call_delay("updateProxyVersion", 400, "")
 end
 
-function initialize(deviceId)
-	DeviceId = deviceId
-	-- Create the init script in /etc/init.d/upnp-proxy-daemon.
-	local f = io.open(initScriptPath, "r")
-	if (f) then
-		-- File already exists.
-		if (f:read("*a") == initScript) then
-			luup.log("Init script unchanged.")
-			f:close()
-		else
-			luup.log("Init script different; will be recreated.")
-			f:close()
-			task("Stopping init script", 1)
-			os.execute(initScriptPath .. " stop")
-			task("Stopped init script", 4)
-			createInitScript()
-			luup.call_delay("restartNeeded", 1, "Restart Luup engine to complete installation")
-			return true
-		end
-	else
-		luup.log("Init script absent; will be created.")
-		createInitScript()
-		luup.call_delay("restartNeeded", 1, "Restart Luup engine to complete installation")
-		return true
-	end
-
-	-- Proxy should be running now.
-
-	luup.call_delay("updateProxyVersion", 1, "")
-	return true
-end
-
-function uninstall(deviceId)
-	local f = io.open(initScriptPath, "r")
-	if (f) then
-		-- File exists.
-		f:close()
-		task("Stopping init script", 1)
-		os.execute(initScriptPath .. " stop")
-		task("Stopped init script", 4)
-		task("Disabling init script", 1)
-		os.execute(initScriptPath .. " disable")
-		task("Disabling init script", 4)
-		task("Removing init script", 1)
-		os.execute("rm " .. initScriptPath)
-		task("Removed init script", 4)
-		task("Delete the UPnP Event Proxy device, then reload Luup engine.", 1)
-	end
-end
-
+-- This is a time out target; function needs to be global
 function restartNeeded(message)
-	task(message, 2)
+    task(message, 2)
+end
+
+function uninstall(lul_device)
+    local f = io.open(initScriptPath, "r")
+    if (f) then
+        -- File exists.
+        f:close()
+        task("Stopping init script", 1)
+        os.execute(initScriptPath .. " stop")
+        task("Stopped init script", 4)
+        task("Disabling init script", 1)
+        os.execute(initScriptPath .. " disable")
+        task("Disabling init script", 4)
+        task("Removing init script", 1)
+        os.execute("rm " .. initScriptPath)
+        task("Removed init script", 4)
+        task("Delete the UPnP Event Proxy device, then reload Luup engine.", 1)
+    end
+end
+
+-- Let's do it
+-- Function must be global
+function initialize(lul_device)
+    THIS_LUL_DEVICE = lul_device
+
+    luup.log('Heliotrope start',50)
+
+    -- set up some defaults:
+    variableSet('PluginVersion', PLUGIN_VERSION)
+
+    -- Create the init script in /etc/init.d/upnp-proxy-daemon.
+    local f = io.open(initScriptPath, "r")
+    if (f) then
+        -- File already exists.
+        if (f:read("*a") == initScript) then
+            luup.log("Init script unchanged.")
+            f:close()
+        else
+            luup.log("Init script different; will be recreated.")
+            f:close()
+            task("Stopping init script", 1)
+            os.execute(initScriptPath .. " stop")
+            task("Stopped init script", 4)
+            createInitScript()
+            luup.call_delay("restartNeeded", 1, "Restart Luup engine to complete installation")
+            return true
+        end
+    else
+        luup.log("Init script absent; will be created.")
+        createInitScript()
+        luup.call_delay("restartNeeded", 1, "Restart Luup engine to complete installation")
+        return true
+    end
+
+    -- Proxy should be running now.
+
+    luup.call_delay("updateProxyVersion", 1, "")
+    return true
 end
