@@ -1,5 +1,6 @@
 {
-    "flashicon": "http://futzle.com/mios/upnp_50x50.png",
+    "flashicon": "https://a-lurker.github.io/icons/UPnP_50_50.png",
+    "default_icon": "https://a-lurker.github.io/icons/UPnP_50_50.png",
     "imgIconBody": "",
     "imgIconDimmable": "",
     "imgIconTurnable": "",
