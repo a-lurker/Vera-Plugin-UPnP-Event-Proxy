@@ -1,16 +1,20 @@
---
--- UPnP Event Proxy plugin
--- Copyright (C) 2013 Deborah Pickett
---
--- Version 0.0 2013-04-14 by Deborah Pickett
---
--- Minor mods by A-Lurker 26 Sept 2020
+--[[
+
+   UPnP Event Proxy plugin
+   Copyright (C) 2013 Deborah Pickett
+   Version 0.0 2013-04-14 by Deborah Pickett
+  
+   Minor mods by A-Lurker 28 Sept 2020 to suit openLuup
+   This code runs under and is dependant upon OpenWrt:
+   Refer to: https://openwrt.org/docs/techref/initscripts
+   Given the above dependency, this code works with both MiOS and openLuup
+]]
 
 module ("L_UPnPProxy1", package.seeall)
 
 local PLUGIN_NAME     = 'UPnPProxy'
 local PLUGIN_SID      = 'urn:futzle-com:serviceId:'..PLUGIN_NAME..'1'
-local PLUGIN_VERSION  = '0.52'
+local PLUGIN_VERSION  = '0.53'
 local THIS_LUL_DEVICE = nil
 
 local initScriptPath = "/etc/init.d/upnp-proxy-daemon"
@@ -26,10 +30,12 @@ local function variableSet (k, v)
 end
 
 local initScript = [=[#!/bin/sh /etc/rc.common
+
 # Copyright (C) 2007 OpenWrt.org
 START=80
 PID_FILE=/var/run/upnp-event-proxy.pid
 PROXY_DAEMON=/tmp/upnp-event-proxy.lua
+
 start() {
 	if [ -f "$PID_FILE" ]; then
 		# May already be running.
@@ -42,15 +48,28 @@ start() {
 			fi
 		fi
 	fi
-	# Find and decompress the proxy daemon Lua source.
-	if [ -f /etc/cmh-ludl/L_UPnPProxyDaemon.lua.lzo ]; then
-		PROXY_DAEMON_LZO=/etc/cmh-ludl/L_UPnPProxyDaemon.lua.lzo
-	elif [ -f /etc/cmh-lu/L_UPnPProxyDaemon.lua.lzo ]; then
-		PROXY_DAEMON_LZO=/etc/cmh-lu/L_UPnPProxyDaemon.lua.lzo
-	fi
-	if [ -n "$PROXY_DAEMON_LZO" ]; then
-		/usr/bin/pluto-lzo d "$PROXY_DAEMON_LZO" /tmp/upnp-event-proxy.lua
-	fi
+
+    # openLuup: Look for the uncompressed proxy daemon Lua source.
+    if [ -f /etc/cmh-ludl/L_UPnPProxyDaemon.lua ]; then
+        PROXY_DAEMON_UC=/etc/cmh-ludl/L_UPnPProxyDaemon.lua
+    elif [ -f /etc/cmh-ludl/files/L_UPnPProxyDaemon.lua ]; then
+        PROXY_DAEMON_UC=/etc/cmh-ludl/files/L_UPnPProxyDaemon.lua
+
+    # Vera 3: Else look for the compressed proxy daemon Lua source.
+    elif [ -f /etc/cmh-ludl/L_UPnPProxyDaemon.lua.lzo ]; then
+        PROXY_DAEMON_LZO=/etc/cmh-ludl/L_UPnPProxyDaemon.lua.lzo
+    elif [ -f /etc/cmh-lu/L_UPnPProxyDaemon.lua.lzo ]; then
+        PROXY_DAEMON_LZO=/etc/cmh-lu/L_UPnPProxyDaemon.lua.lzo
+    fi
+
+
+    if [ -n "$PROXY_DAEMON_UC" ]; then
+        cp "$PROXY_DAEMON_UC" "$PROXY_DAEMON"
+    elif [ -n "$PROXY_DAEMON_LZO" ]; then
+        /usr/bin/pluto-lzo d "$PROXY_DAEMON_LZO" "$PROXY_DAEMON"
+    fi
+
+
 	# Close file descriptors.
 	for fd in /proc/self/fd/*; do
 		fd=${fd##*/}
@@ -59,6 +78,7 @@ start() {
 			*) eval "exec $fd<&-"
 		esac
 	done
+
 	# Run daemon.
 	/usr/bin/lua "$PROXY_DAEMON" </dev/null >/dev/null 2>&1 &
 	echo "$!" > "$PID_FILE"
@@ -74,6 +94,7 @@ stop() {
 			fi
 		fi
 	fi
+
 	echo "Daemon is not running"
 	return 1
 }
@@ -107,15 +128,31 @@ function updateProxyVersion()
     local ProxyApiVersion
     local t = {}
     local request, code = http.request({
+    --[[
+        If the Proxy is NOT running the URL used here will result in
+        different returned values depending on the hardware OS; eg:
+
+        Vera 3:
+           localhost  = connection refused 
+           127.0.0.1  = connection refused
+           ip_address = connection refused
+
+        RasPi:
+           localhost  = closed
+           127.0.0.1  = connection refused
+           ip_address = connection refused
+    ]]
         url = "http://localhost:2529/version",
         sink = ltn12.sink.table(t)
     })
+
+    if (request == nil) then luup.log('Proxy check returned http error message: '..code,50) end
 
     if (request == nil and code == "timeout") then
         task("Checking that proxy is running (retrying)", 1)
         luup.call_delay("updateProxyVersion", 5, "")
         return
-    elseif (request == nil and code ~= "closed") then
+    elseif (request == nil) then
         -- Proxy not running.
         task("Proxy is not running", 4)
         variableSet("Status", 0)
@@ -129,8 +166,8 @@ function updateProxyVersion()
         variableSet("API", ProxyApiVersion)
     end
 
-    -- Check again in a while.
-    luup.call_delay("updateProxyVersion", 400, "")
+    -- Check again in 7 minutes.
+    luup.call_delay("updateProxyVersion", 420, "")
 end
 
 -- This is a time out target; function needs to be global
@@ -160,8 +197,6 @@ end
 -- Function must be global
 function initialize(lul_device)
     THIS_LUL_DEVICE = lul_device
-
-    luup.log('Heliotrope start',50)
 
     -- set up some defaults:
     variableSet('PluginVersion', PLUGIN_VERSION)
