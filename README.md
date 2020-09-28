@@ -1,9 +1,17 @@
-# MiOS-UPnPEventProxy
+# <img align="left" src="https://a-lurker.github.io/icons/UPnP_50_50.png"> Vera-Plugin-UPnP-Event-Proxy
+
+This software was originated by Deborah Pickett, to run on a Vera. Thanks to Deborah for her work on this software. It's been updated here (2020) to work with openLuup (OpenWrt systems only).
 
 This plugin runs a simple HTTP server on your Vera which listens for UPnP NOTIFY messages, and forwards them on to another MiOS plugin.
 End user documentation
 
 If you have been sent here by a different plugin, it's because that plugin wants you to install the UPnP Event Proxy plugin. If you don't install the UPnP Event Proxy then you may find that the other plugin runs with reduced functionality, most likely that changes made outside the plugin aren't immediately visible in the MiOS dashboard.
+
+## Dependencies
+
+This code runs under and is dependant upon OpenWrt:
+Refer to: https://openwrt.org/docs/techref/initscripts
+Given the above dependency, this code works with both MiOS and openLuup
 
 ## Installation
 
@@ -172,3 +180,28 @@ The proxy runs in a single thread. Consequently it is vital that plugins do not 
 To minimize the likelihood of delays, plugins should restrict their actions to a minimum during actions such as VariableChanged. The plugin should liberally use luup.call_delay() for anything that may block or take significant time to run.
 
 Because the plugin makes HTTP requests to the proxy and the proxy makes action calls to the plugin, there is a risk of deadlock. To minimize this, the proxy will time out and retry after a random period of time from 1 to 5 seconds, up to a maximum of three times. If the action still cannot be delivered then it is discarded. It is a good idea for the plugin to do the same, using retry counters and luup.call_delay() to compartmentalize each invocation and allow the proxy to contact the plugin as soon as possible. 
+
+## Notes - the daemon
+
+1.
+  * During initialisation "L_UPnPProxy1.lua" creates and executes the script "/etc/init.d/upnp-proxy-daemon"
+  * Note that the created script is reliant on the OpenWrt file "/etc/rc.common"
+2.
+  * openLuup: The script copies the file "L_UPnPProxy1.lua" to "/tmp/upnp-event-proxy.lua"
+  * MiOS: The script decompresses & copies the file "L_UPnPProxy1.lua.lzo" to "/tmp/upnp-event-proxy.lua"
+3.
+  * The hard link "/etc/rc.d/S80upnp-proxy-daemon" is also created by the script. However "K80upnp-proxy-daemon" is not created or used: refer to "/etc/rc.common"
+4. Commands used by "L_UPnPProxy1.lua" to control the script are: 
+  * /etc/init.d/upnp-proxy-daemon enable   creates the "S80upnp-proxy-daemon" file
+  * /etc/init.d/upnp-proxy-daemon start
+  * /etc/init.d/upnp-proxy-daemon stop
+  * /etc/init.d/upnp-proxy-daemon disable  deletes the "S80upnp-proxy-daemon" file
+5.
+   * If the daemon is running the ps command will show: "/usr/bin/lua /tmp/upnp-event-proxy.lua"
+
+Testing any lua code modifications:
+stop daemon: "/etc/init.d/upnp-proxy-daemon stop"
+delete daemon: "/etc/init.d/upnp-proxy-daemon"
+delete script: "/tmp/upnp-event-proxy.lua"
+restart luup engine TWICE
+
