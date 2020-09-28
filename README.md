@@ -9,8 +9,8 @@ If you have been sent here by a different plugin, it's because that plugin wants
 
 ## Dependencies
 
-This code runs under and is dependant upon OpenWrt:
-Refer to: https://openwrt.org/docs/techref/initscripts
+This code runs under and is dependant upon OpenWrt:<br/>
+Refer to: https://openwrt.org/docs/techref/initscripts<br/>
 Given the above dependency, this code works with both MiOS and openLuup
 
 ## Installation
@@ -183,25 +183,25 @@ Because the plugin makes HTTP requests to the proxy and the proxy makes action c
 
 ## Notes - the daemon
 
-1.
-  * During initialisation "L_UPnPProxy1.lua" creates and executes the script "/etc/init.d/upnp-proxy-daemon"
-  * Note that the created script is reliant on the OpenWrt file "/etc/rc.common"
-2.
+1. Initialisation
+  * during initialisation "L_UPnPProxy1.lua" creates and executes the script "/etc/init.d/upnp-proxy-daemon"
+  * note that the created script is reliant on the OpenWrt file "/etc/rc.common"
+2. L_UPnPProxy1.lua set up
   * openLuup: The script copies the file "L_UPnPProxy1.lua" to "/tmp/upnp-event-proxy.lua"
   * MiOS: The script decompresses & copies the file "L_UPnPProxy1.lua.lzo" to "/tmp/upnp-event-proxy.lua"
-3.
-  * The hard link "/etc/rc.d/S80upnp-proxy-daemon" is also created by the script. However "K80upnp-proxy-daemon" is not created or used: refer to "/etc/rc.common"
+3. Hard links
+  * the hard link "/etc/rc.d/S80upnp-proxy-daemon" is also created by the script. However "K80upnp-proxy-daemon" is not created or used: refer to "/etc/rc.common"
 4. Commands used by "L_UPnPProxy1.lua" to control the script are: 
   * /etc/init.d/upnp-proxy-daemon enable   creates the "S80upnp-proxy-daemon" file
   * /etc/init.d/upnp-proxy-daemon start
   * /etc/init.d/upnp-proxy-daemon stop
   * /etc/init.d/upnp-proxy-daemon disable  deletes the "S80upnp-proxy-daemon" file
-5.
-   * If the daemon is running the ps command will show: "/usr/bin/lua /tmp/upnp-event-proxy.lua"
+5. ps command
+  * if the daemon is running the ps command will show: "/usr/bin/lua /tmp/upnp-event-proxy.lua"
 
-Testing any lua code modifications:
-stop daemon: "/etc/init.d/upnp-proxy-daemon stop"
-delete daemon: "/etc/init.d/upnp-proxy-daemon"
-delete script: "/tmp/upnp-event-proxy.lua"
-restart luup engine TWICE
+Testing any lua code modifications:<br/>
+stop daemon: "/etc/init.d/upnp-proxy-daemon stop"<br/>
+delete daemon: "/etc/init.d/upnp-proxy-daemon"<br/>
+delete script: "/tmp/upnp-event-proxy.lua"<br/>
+restart luup engine TWICE<br/>
 
